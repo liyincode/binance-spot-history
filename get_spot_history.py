@@ -26,7 +26,18 @@ except (ValueError, TypeError):
     default_days_env = 3
 # ----------------------------------------------------
 
-def get_binance_history(symbol, interval, start_date, end_date):
+def get_datetime_format(interval_str):
+    """
+    Determine appropriate datetime format based on interval
+    """
+    if interval_str in ['1d', '3d', '1w', '1M']:
+        return '%Y-%m-%d'  # Date only for day/week/month intervals
+    elif interval_str in ['1h', '2h', '4h', '6h', '8h', '12h']:
+        return '%Y-%m-%d %H:%M'  # Date + hour for hourly intervals
+    else:
+        return '%Y-%m-%d %H:%M:%S'  # Full timestamp for minute intervals
+
+def get_binance_history(symbol, interval, start_date, end_date, interval_str):
     """
     Get historical K-line data for specified trading pair, time range and interval.
     """
@@ -62,7 +73,9 @@ def get_binance_history(symbol, interval, start_date, end_date):
             close_price = float(kline[4])
             change = close_price - open_price
             percentage_change = (change / open_price) * 100 if open_price != 0 else 0
-            kline_datetime = datetime.fromtimestamp(kline[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            # Format datetime based on interval granularity
+            datetime_format = get_datetime_format(interval_str)
+            kline_datetime = datetime.fromtimestamp(kline[0] / 1000).strftime(datetime_format)
 
             day_data = {
                 "datetime": kline_datetime, "open": open_price, "high": high_price,
@@ -102,11 +115,11 @@ if __name__ == "__main__":
         # Get UTC time to avoid timezone issues
         now_utc = datetime.now(timezone.utc)
 
-        # Simple and direct logic: get recent N days of complete data
-        # End date: yesterday (to ensure data completeness)
+        # Get recent N days of COMPLETE trading data
+        # End date: yesterday (last complete trading day, avoiding incomplete current day data)
         end_date_obj = (now_utc - timedelta(days=1)).date()
 
-        # Start date: N-1 days before end date
+        # Start date: N-1 days before end date to get exactly N complete days
         start_date_obj = end_date_obj - timedelta(days=default_days_env - 1)
 
         args.start = start_date_obj.strftime('%Y-%m-%d')
@@ -129,4 +142,4 @@ if __name__ == "__main__":
     if args.interval not in interval_map:
         print(f"Error: Invalid interval '{args.interval}'.")
     else:
-        get_binance_history(args.symbol, interval_map[args.interval], args.start, args.end)
+        get_binance_history(args.symbol, interval_map[args.interval], args.start, args.end, args.interval)
