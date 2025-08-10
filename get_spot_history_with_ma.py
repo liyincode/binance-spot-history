@@ -239,25 +239,43 @@ if __name__ == "__main__":
             print("Error: Invalid MA periods format. Use comma-separated numbers like '7,25,99'")
             exit(1)
 
-    if args.start is None or args.end is None:
-        # --- 4. Use days from .env to calculate default date range ---
-        print(f"No dates specified, using default: querying past {default_days_env} days of data.")
+    # --- 4. Determine and fill date range defaults without overriding user-provided values ---
+    daily_like_intervals = ['1d', '3d', '1w', '1M']
+    is_daily_like = args.interval in daily_like_intervals
 
-        # Get UTC time to avoid timezone issues
-        now_utc = datetime.now(timezone.utc)
-
-        # Get recent N days of COMPLETE trading data
-        # End date: yesterday (last complete trading day, avoiding incomplete current day data)
-        end_date_obj = (now_utc - timedelta(days=1)).date()
-        # Start date: N-1 days before end date to get exactly N complete days
+    if args.start is None and args.end is None:
+        # No dates specified — choose sensible defaults based on interval granularity
+        now_utc_date = datetime.now(timezone.utc).date()
+        if is_daily_like:
+            # For daily-like intervals, use yesterday to avoid partial current day
+            end_date_obj = now_utc_date - timedelta(days=1)
+        else:
+            # For sub-daily (hour/minute), include up-to-now by using today
+            end_date_obj = now_utc_date
         start_date_obj = end_date_obj - timedelta(days=default_days_env - 1)
 
         args.start = start_date_obj.strftime('%Y-%m-%d')
         args.end = end_date_obj.strftime('%Y-%m-%d')
 
         include_ma_info = " (with MA calculation)" if not args.no_ma else ""
-        print(f"Actual query time range: {args.start} to {args.end}{include_ma_info}")
-        # ----------------------------------------------------
+        print(f"Auto time range: {args.start} to {args.end}{include_ma_info}")
+    else:
+        # Fill missing boundary only, do not override user-provided values
+        if args.end is None:
+            now_utc_date = datetime.now(timezone.utc).date()
+            end_date_obj = (now_utc_date - timedelta(days=1)) if is_daily_like else now_utc_date
+            args.end = end_date_obj.strftime('%Y-%m-%d')
+            print(f"End date not specified. Using {args.end} based on interval '{args.interval}'.")
+
+        if args.start is None:
+            try:
+                end_date_obj = datetime.strptime(args.end, '%Y-%m-%d').date()
+            except Exception:
+                end_date_obj = datetime.now(timezone.utc).date()
+            start_date_obj = end_date_obj - timedelta(days=default_days_env - 1)
+            args.start = start_date_obj.strftime('%Y-%m-%d')
+            print(f"Start date not specified. Using {args.start} to cover last {default_days_env} days.")
+    # ----------------------------------------------------
 
     interval_map = {
         '1m': Client.KLINE_INTERVAL_1MINUTE, '3m': Client.KLINE_INTERVAL_3MINUTE,
