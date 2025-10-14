@@ -109,6 +109,52 @@ def get_datetime_format(interval_str):
     else:
         return '%Y-%m-%d %H:%M:%S'  # Full timestamp for minute intervals
 
+def remove_incomplete_last_candle(data, interval_str):
+    """
+    Remove the last candle if it's incomplete for sub-daily intervals.
+    For example, if current time is 11:30 and we have 1h interval,
+    the 11:00 candle won't be complete until 12:00.
+    """
+    if not data:
+        return data
+    
+    # Only remove for sub-daily intervals (hourly and minute intervals)
+    sub_daily_intervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h']
+    if interval_str not in sub_daily_intervals:
+        return data
+    
+    current_time = datetime.now(timezone.utc)
+    last_candle = data[-1]
+    datetime_format = get_datetime_format(interval_str)
+    
+    try:
+        # Parse the last candle's datetime
+        last_candle_dt = datetime.strptime(last_candle['datetime'], datetime_format)
+        
+        # Add timezone info for comparison
+        last_candle_dt = last_candle_dt.replace(tzinfo=timezone.utc)
+        
+        # Calculate when this candle should close based on the interval
+        interval_minutes = {
+            '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+            '1h': 60, '2h': 120, '4h': 240, '6h': 360, '8h': 480, '12h': 720
+        }
+        
+        if interval_str in interval_minutes:
+            candle_close_time = last_candle_dt + timedelta(minutes=interval_minutes[interval_str])
+            
+            # If current time is before the candle close time, the candle is incomplete
+            if current_time < candle_close_time:
+                print(f"\nRemoving incomplete last candle: {last_candle['datetime']}")
+                print(f"Current time: {current_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                print(f"Candle closes at: {candle_close_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                return data[:-1]  # Remove the last element
+    
+    except Exception as e:
+        print(f"Warning: Could not check candle completeness: {e}")
+    
+    return data
+
 def get_binance_history(symbol, interval, start_date, end_date, interval_str, include_ma=True):
     """
     Get historical K-line data for specified trading pair, time range and interval.
@@ -198,6 +244,9 @@ def get_binance_history(symbol, interval, start_date, end_date, interval_str, in
             final_data = filtered_data
         else:
             final_data = all_data
+
+        # Remove incomplete last candle for sub-daily intervals
+        final_data = remove_incomplete_last_candle(final_data, interval_str)
 
         print("\n--- Data fetched successfully ---")
         if include_ma and ma_periods:
